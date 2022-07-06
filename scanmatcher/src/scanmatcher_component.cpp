@@ -320,10 +320,9 @@ void ScanMatcherComponent::receiveCloud(
     geometry_msgs::msg::TransformStamped odom_trans;
     try {
       odom_trans = tfbuffer_.lookupTransform(
-        odom_frame_id_, robot_frame_id_, tf2_ros::fromMsg(
-          stamp));
+        odom_frame_id_, robot_frame_id_, tf2::TimePointZero);
     } catch (tf2::TransformException & e) {
-      RCLCPP_ERROR(this->get_logger(), "%s", e.what());
+      //RCLCPP_ERROR(this->get_logger(), "%s", e.what());
     }
     Eigen::Affine3d odom_affine = tf2::transformToEigen(odom_trans);
     Eigen::Matrix4f odom_mat = odom_affine.matrix().cast<float>();
@@ -340,6 +339,15 @@ void ScanMatcherComponent::receiveCloud(
   rclcpp::Time time_align_end = system_clock.now();
 
   Eigen::Matrix4f final_transformation = registration_->getFinalTransformation();
+  Eigen::Matrix4f diff_transform = final_transformation - sim_trans;
+  // Recovery from failed registration
+  float abs_diff = sqrt(pow(diff_transform(0,3),2) + pow(diff_transform(1,3),2));
+
+  if (use_odom_ && (abs_diff > 5.0 )) {
+    final_transformation = sim_trans;
+    std::cout << "odom transform selected" << std::endl;
+    std::cout << abs_diff << std::endl;
+  }
 
   publishMapAndPose(cloud_ptr, final_transformation, stamp);
 

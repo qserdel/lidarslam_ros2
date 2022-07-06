@@ -54,6 +54,12 @@ src/graph_based_slam_component.cpp
 
 target_compile_definitions(graph_based_slam_component PRIVATE "GS_GBS_BUILDING_DLL")
 
+target_link_libraries(graph_based_slam_component  
+g2o::core
+g2o::types_slam3d
+g2o::solver_eigen
+)
+
 ament_target_dependencies(graph_based_slam_component
   rclcpp 
   rclcpp_components 
@@ -73,9 +79,6 @@ src/graph_based_slam_node.cpp
 target_link_libraries(graph_based_slam_node
 graph_based_slam_component 
 ${PCL_LIBRARIES}
-g2o::core
-g2o::types_slam3d
-g2o::solver_eigen
 )
 
 ament_target_dependencies(graph_based_slam_node
