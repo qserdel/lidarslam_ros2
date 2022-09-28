@@ -32,10 +32,6 @@ ScanMatcherComponent::ScanMatcherComponent(const rclcpp::NodeOptions & options)
   get_parameter("gicp_corr_dist_threshold", gicp_corr_dist_threshold);
   declare_parameter("trans_for_mapupdate", 1.5);
   get_parameter("trans_for_mapupdate", trans_for_mapupdate_);
-  declare_parameter("vg_size_for_input", 0.2);
-  get_parameter("vg_size_for_input", vg_size_for_input_);
-  declare_parameter("vg_size_for_map", 0.1);
-  get_parameter("vg_size_for_map", vg_size_for_map_);
   declare_parameter("use_min_max_filter", false);
   get_parameter("use_min_max_filter", use_min_max_filter_);
   declare_parameter("scan_min_range", 0.1);
@@ -82,8 +78,6 @@ ScanMatcherComponent::ScanMatcherComponent(const rclcpp::NodeOptions & options)
   std::cout << "ndt_num_threads:" << ndt_num_threads << std::endl;
   std::cout << "gicp_corr_dist_threshold[m]:" << gicp_corr_dist_threshold << std::endl;
   std::cout << "trans_for_mapupdate[m]:" << trans_for_mapupdate_ << std::endl;
-  std::cout << "vg_size_for_input[m]:" << vg_size_for_input_ << std::endl;
-  std::cout << "vg_size_for_map[m]:" << vg_size_for_map_ << std::endl;
   std::cout << "use_min_max_filter:" << std::boolalpha << use_min_max_filter_ << std::endl;
   std::cout << "scan_min_range[m]:" << scan_min_range_ << std::endl;
   std::cout << "scan_max_range[m]:" << scan_max_range_ << std::endl;
@@ -207,11 +201,7 @@ void ScanMatcherComponent::initializePubSub()
 
         if (!initial_cloud_received_) {
           RCLCPP_INFO(get_logger(), "create a first map");
-          pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>());
-          pcl::VoxelGrid<pcl::PointXYZI> voxel_grid;
-          voxel_grid.setLeafSize(vg_size_for_map_, vg_size_for_map_, vg_size_for_map_);
-          voxel_grid.setInputCloud(tmp_ptr);
-          voxel_grid.filter(*cloud_ptr);
+          pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_ptr = tmp_ptr;
 
           initial_cloud_received_ = true;
 
@@ -292,13 +282,7 @@ void ScanMatcherComponent::receiveCloud(
         if (registration_method_ == "NDT") {
           registration_->setInputTarget(targeted_cloud_ptr);
         } else {
-          pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_targeted_cloud_ptr(
-            new pcl::PointCloud<pcl::PointXYZI>());
-          pcl::VoxelGrid<pcl::PointXYZI> voxel_grid;
-          voxel_grid.setLeafSize(vg_size_for_input_, vg_size_for_input_, vg_size_for_input_);
-          voxel_grid.setInputCloud(targeted_cloud_ptr);
-          voxel_grid.filter(*filtered_targeted_cloud_ptr);
-          registration_->setInputTarget(filtered_targeted_cloud_ptr);
+          registration_->setInputTarget(targeted_cloud_ptr);
         }
         is_map_updated_ = false;
       }
@@ -307,12 +291,7 @@ void ScanMatcherComponent::receiveCloud(
     }
   }
 
-  pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>());
-  pcl::VoxelGrid<pcl::PointXYZI> voxel_grid;
-  voxel_grid.setLeafSize(vg_size_for_input_, vg_size_for_input_, vg_size_for_input_);
-  voxel_grid.setInputCloud(cloud_ptr);
-  voxel_grid.filter(*filtered_cloud_ptr);
-  registration_->setInputSource(filtered_cloud_ptr);
+  registration_->setInputSource(cloud_ptr);
 
   Eigen::Matrix4f sim_trans = getTransformation(corrent_pose_stamped_.pose);
 
@@ -363,7 +342,6 @@ void ScanMatcherComponent::receiveCloud(
   std::cout << "trans: " << trans_ << std::endl;
   std::cout << "align time:" << time_align_end.seconds() - time_align_start.seconds() << "s" <<
     std::endl;
-  std::cout << "number of filtered cloud points: " << filtered_cloud_ptr->size() << std::endl;
   std::cout << "initial transformation:" << std::endl;
   std::cout << sim_trans << std::endl;
   std::cout << "has converged: " << registration_->hasConverged() << std::endl;
@@ -431,15 +409,10 @@ void ScanMatcherComponent::updateMap(
   const pcl::PointCloud<pcl::PointXYZI>::ConstPtr cloud_ptr,
   const Eigen::Matrix4f final_transformation,
   const geometry_msgs::msg::PoseStamped corrent_pose_stamped)
-{
-  pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>());
-  pcl::VoxelGrid<pcl::PointXYZI> voxel_grid;
-  voxel_grid.setLeafSize(vg_size_for_map_, vg_size_for_map_, vg_size_for_map_);
-  voxel_grid.setInputCloud(cloud_ptr);
-  voxel_grid.filter(*filtered_cloud_ptr);
+  {
 
   pcl::PointCloud<pcl::PointXYZI>::Ptr transformed_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>());
-  pcl::transformPointCloud(*filtered_cloud_ptr, *transformed_cloud_ptr, final_transformation);
+  pcl::transformPointCloud(*cloud_ptr, *transformed_cloud_ptr, final_transformation);
 
   targeted_cloud_.clear();
   targeted_cloud_ += *transformed_cloud_ptr;
@@ -458,7 +431,7 @@ void ScanMatcherComponent::updateMap(
   /* map array */
   sensor_msgs::msg::PointCloud2::SharedPtr cloud_msg_ptr(
     new sensor_msgs::msg::PointCloud2);
-  pcl::toROSMsg(*filtered_cloud_ptr, *cloud_msg_ptr);
+  pcl::toROSMsg(*cloud_ptr, *cloud_msg_ptr);
 
   lidarslam_msgs::msg::SubMap submap;
   submap.header.frame_id = global_frame_id_;
